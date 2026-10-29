@@ -252,7 +252,3 @@ Built according to modern Web Vitals optimization practices:
 ## 📄 License
 
 Distributed under the **MIT License**. See `LICENSE` for details.
-
-```
-
-```
