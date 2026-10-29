@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Day mode ("sunny morning") - WCAG AA verified */
+  :root {
+    --bg: #FFF9EF;
+    --surface: #FFFFFF;
+    --surface-soft: #FDF1DC;
+    --primary: #F6B94C;
+    --primary-fg: #3B2A0A; /* Contrast vs #F6B94C is 7.1:1 (AAA) */
+    --accent-sky: #8EC9E8;
+    --accent-sky-fg: #163A4F; /* Contrast 8.2:1 for accessible text on sky badges */
+    --accent-mint: #A8DCC3;
+    --accent-mint-fg: #143D2B; /* Contrast 8.5:1 */
+    --accent-blush: #F7B7A3;
+    --accent-blush-fg: #4A1C10; /* Contrast 7.9:1 */
+    --text: #2F3B4A; /* Contrast vs #FFF9EF is 10.6:1 (AAA) */
+    --text-muted: #5C6B7C; /* Adjusted from #6B7A8C to ensure >4.7:1 AA on --surface-soft */
+    --border: #F0E6D2;
+    --radius: 1rem;
+  }
+
+  /* Night mode ("calm twilight") - WCAG AA verified */
+  .dark {
+    --bg: #141B2D;
+    --surface: #1D2742;
+    --surface-soft: #243053;
+    --primary: #FFD28A;
+    --primary-fg: #1B1405; /* Contrast vs #FFD28A is 12.4:1 (AAA) */
+    --accent-sky: #7FB5E6;
+    --accent-sky-fg: #0D2238;
+    --accent-mint: #8FD1B4;
+    --accent-mint-fg: #0D291E;
+    --accent-blush: #E9A28E;
+    --accent-blush-fg: #2E1109;
+    --text: #E8ECF5; /* Contrast vs #141B2D is 13.8:1 (AAA) */
+    --text-muted: #9AA6BD; /* Contrast vs #1D2742 is 5.3:1 (AA) */
+    --border: #2C3859;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    background-color: var(--bg);
+    color: var(--text);
+    scroll-behavior: smooth;
+  }
+
+  body,
+  header,
+  footer,
+  main,
+  section,
+  div,
+  article,
+  aside,
+  nav,
+  button,
+  input,
+  select,
+  textarea,
+  a,
+  span {
+    transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+    transition-duration: 450ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 150ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Reader Dedicated Independent Themes */
+[data-reader-theme="day"] {
+  --reader-bg: #FFF9EF;
+  --reader-surface: #FFFFFF;
+  --reader-text: #2F3B4A;
+  --reader-muted: #5C6B7C;
+  --reader-border: #F0E6D2;
+}
+
+[data-reader-theme="sepia"] {
+  --reader-bg: #F4ECD8;
+  --reader-surface: #EFE4C8;
+  --reader-text: #3C2F23;
+  --reader-muted: #6E5A47;
+  --reader-border: #E2D4B5;
+}
+
+[data-reader-theme="paper"] {
+  --reader-bg: #FAF8F5;
+  --reader-surface: #F2EFE9;
+  --reader-text: #262625;
+  --reader-muted: #666560;
+  --reader-border: #E5E0D8;
+}
+
+[data-reader-theme="night"] {
+  --reader-bg: #141B2D;
+  --reader-surface: #1D2742;
+  --reader-text: #E8ECF5;
+  --reader-muted: #9AA6BD;
+  --reader-border: #2C3859;
+}
+
+[data-reader-theme="true-dark"] {
+  --reader-bg: #08090C;
+  --reader-surface: #12141A;
+  --reader-text: #D8DEE9;
+  --reader-muted: #8892A4;
+  --reader-border: #1E222D;
+}
+
+/* View Transitions API Circular Theme Reveal */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}

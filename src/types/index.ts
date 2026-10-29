@@ -1,0 +1,118 @@
+export type BookStatus = "ongoing" | "completed";
+
+export type GenreSlug =
+  | "fantasy"
+  | "romance"
+  | "sci-fi"
+  | "slice-of-life"
+  | "mystery"
+  | "adventure"
+  | "historical"
+  | "cozy";
+
+export interface Genre {
+  id: string;
+  slug: GenreSlug;
+  name: string;
+  description: string;
+  colorToken: "sky" | "mint" | "blush" | "primary";
+}
+
+export interface CoverStyle {
+  gradientFrom: string;
+  gradientTo: string;
+  accentColor: string;
+  motif: "sun" | "moon" | "leaf" | "waves" | "stars" | "arch";
+}
+
+export interface Book {
+  id: string;
+  slug: string;
+  title: string;
+  author: string;
+  blurb: string;
+  description: string;
+  status: BookStatus;
+  genres: GenreSlug[];
+  rating: number;
+  views: number;
+  featured?: boolean;
+  weeklyRank?: number;
+  updatedAt: string;
+  createdAt: string;
+  chapterCount: number;
+  coverStyle: CoverStyle;
+}
+
+export interface Chapter {
+  id: string;
+  bookId: string;
+  number: number;
+  title: string;
+  content: string[];
+  wordCount: number;
+  publishedAt: string;
+  status: "published" | "draft";
+}
+
+export type ReaderFontFamily =
+  | "serif"
+  | "sans"
+  | "dyslexic"
+  | "modern-serif"
+  | "mono";
+
+export type ReaderTheme = "day" | "sepia" | "paper" | "night" | "true-dark";
+export type ReaderWidth = "narrow" | "medium" | "wide";
+
+export interface ReaderSettings {
+  fontSize: number; // 14 - 32px
+  fontFamily: ReaderFontFamily;
+  lineHeight: number; // 1.4 - 2.2
+  paragraphSpacing: number; // 0.75 - 2.0 rem
+  textAlign: "left" | "justify";
+  contentWidth: ReaderWidth;
+  theme: ReaderTheme;
+}
+
+export type ShelfCategory = "reading" | "plan-to-read" | "completed";
+
+export interface ReadingProgress {
+  bookId: string;
+  bookSlug: string;
+  lastChapter: number;
+  totalChapters: number;
+  scrollPercentage: number;
+  readChapters: number[];
+  updatedAt: string;
+}
+
+export interface UploadedBook {
+  id: string;
+  title: string;
+  author: string;
+  format: "epub" | "pdf";
+  sizeBytes: number;
+  fileBlob: ArrayBuffer;
+  coverDataUrl?: string;
+  progressPercentage: number;
+  lastLocation: string; // EPUB CFI or PDF page number string
+  addedAt: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "reader" | "admin";
+  joinedAt: string;
+}
+
+export interface BookFilterParams {
+  query?: string;
+  genres?: GenreSlug[];
+  status?: BookStatus | "all";
+  sort?: "popular" | "newest" | "rating" | "az";
+  page?: number;
+  pageSize?: number;
+}
