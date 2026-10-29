@@ -1,8 +1,4 @@
-Here is a comprehensive, production-grade `README.md` for **Sunlit Pages**, structured for software engineering portfolio evaluation, clear architecture review, and developer onboarding.
 
----
-
-```markdown
 # ☀️ Sunlit Pages
 
 > A calm, minimal, distraction-free online book and light-novel sanctuary engineered with Next.js (App Router), TypeScript, and browser-first client storage.
