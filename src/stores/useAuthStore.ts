@@ -3,50 +3,52 @@ import { persist } from "zustand/middleware";
 import { User } from "@/types";
 
 interface AuthState {
-  user: User | null;
-  login: (email: string, name?: string) => void;
+  user: User;
+  setRole: (role: "reader" | "admin") => void;
+  loginAs: (role: "reader" | "admin") => void;
   logout: () => void;
-  toggleRole: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: {
-        id: "u-1",
-        name: "Clara Reader",
-        email: "clara@example.com",
+        id: "u-reader",
+        name: "Clara Vance",
+        email: "clara@sunlitpages.dev",
         role: "reader",
         joinedAt: "2025-01-12",
       },
-      login: (email, name = "Clara Reader") =>
+      setRole: (role) =>
+        set((state) => ({
+          user: {
+            ...state.user,
+            role,
+            name: role === "admin" ? "Julian Thorne (Curator)" : "Clara Vance",
+            email: role === "admin" ? "curator@sunlitpages.dev" : "clara@sunlitpages.dev",
+          },
+        })),
+      loginAs: (role) =>
         set({
           user: {
-            id: "u-1",
-            name,
-            email,
-            role: email.includes("admin") ? "admin" : "reader",
-            joinedAt: new Date().toISOString().slice(0, 10),
+            id: role === "admin" ? "u-admin" : "u-reader",
+            name: role === "admin" ? "Julian Thorne (Curator)" : "Clara Vance",
+            email: role === "admin" ? "curator@sunlitpages.dev" : "clara@sunlitpages.dev",
+            role,
+            joinedAt: "2025-01-12",
           },
         }),
-      logout: () => set({ user: null }),
-      toggleRole: () =>
-        set((state) => {
-          const current = state.user ?? {
-            id: "u-1",
-            name: "Clara Reader",
-            email: "clara@example.com",
-            role: "reader" as const,
-            joinedAt: "2025-01-12",
-          };
-          return {
-            user: {
-              ...current,
-              role: current.role === "admin" ? "reader" : "admin",
-            },
-          };
+      logout: () =>
+        set({
+          user: {
+            id: "u-guest",
+            name: "Guest Reader",
+            email: "guest@sunlitpages.dev",
+            role: "reader",
+            joinedAt: "2026-01-01",
+          },
         }),
     }),
-    { name: "sunlit-auth-store" }
+    { name: "sunlit-auth-storage" }
   )
 );

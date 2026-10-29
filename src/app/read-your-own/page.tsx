@@ -1,7 +1,6 @@
-// src/app/read-your-own/page.tsx
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   UploadCloud,
@@ -14,13 +13,14 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { validateBookFile } from "@/lib/validations";
 import { siteConfig } from "@/config/site";
 import { UploadedBook } from "@/types";
 import { useReaderStore } from "@/stores/useReaderStore";
-import { ReaderSettingsDrawer  from "@/components/reader/ReaderSettingsDrawer";
+import { ReaderSettingsDrawer } from "@/components/reader/ReaderSettingsDrawer";
 
 const FONT_MAP: Record<string, string> = {
   serif: "var(--font-lora), 'Lora', Georgia, serif",
@@ -30,18 +30,35 @@ const FONT_MAP: Record<string, string> = {
   mono: "var(--font-mono), 'JetBrains Mono', monospace",
 };
 
+interface ExtractedPage {
+  pageNumber: number;
+  paragraphs: string[];
+}
+
 export default function UploadAndReadPage() {
   const uploadedBooks = useLiveQuery(() => db.uploadedBooks.reverse().toArray(), []) ?? [];
   const { settings } = useReaderStore();
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeBook, setActiveBook] = useState<UploadedBook | null>(null);
-  const [pdfPages, setPdfPages] = useState<{ pageNumber: number; paragraphs: string[] }[]>([]);
+  const [isReaderMode, setIsReaderMode] = useState(true);
+  const [extractedPages, setExtractedPages] = useState<ExtractedPage[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [loadingFile, setLoadingFile] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
   const epubContainerRef = useRef<HTMLDivElement | null>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pdfDocRef = useRef<any>(null);
+
+  const closeViewer = () => {
+    setActiveBook(null);
+    setExtractedPages([]);
+    pdfDocRef.current = null;
+    setCurrentPage(1);
+    setTotalPages(1);
+  };
 
   const handleFileSelect = async (file: File | null) => {
     setErrorMsg(null);
@@ -59,7 +76,7 @@ export default function UploadAndReadPage() {
 
       const newEntry: UploadedBook = {
         id: `local-${Date.now()}`,
-        title: file.name.replace(/\.(epub|pdf)$/i, ""),
+        title: file.name.replace(/\.(epub|pdf)$/i, "").replace(/[_-]/g, " "),
         author: "Personal Library",
         format: isEpub ? "epub" : "pdf",
         sizeBytes: file.size,
@@ -71,19 +88,37 @@ export default function UploadAndReadPage() {
 
       await db.uploadedBooks.add(newEntry);
     } catch {
-      setErrorMsg("Unable to save this file locally. Check disk storage and permissions.");
+      setErrorMsg("Failed to store file in browser IndexedDB.");
     }
   };
 
-  const closeViewer = () => {
-    setActiveBook(null);
-    setPdfPages([]);
-    setCurrentPage(1);
-  };
+  const renderPdfCanvas = useCallback(async (pageNum: number) => {
+    if (!pdfDocRef.current || !pdfCanvasRef.current) return;
+    try {
+      const page = await pdfDocRef.current.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = pdfCanvasRef.current;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      await page.render({ canvasContext: context, viewport }).promise;
+    } catch (e) {
+      console.error("PDF canvas render error:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeBook?.format === "pdf" && !isReaderMode) {
+      renderPdfCanvas(currentPage);
+    }
+  }, [activeBook, isReaderMode, currentPage, renderPdfCanvas]);
 
   const openBookInReader = async (book: UploadedBook) => {
     setErrorMsg(null);
-    setLoadingFile(true);
+    setIsProcessing(true);
     setActiveBook(book);
 
     if (book.format === "epub") {
@@ -91,6 +126,7 @@ export default function UploadAndReadPage() {
         const ePubModule = await import("epubjs");
         const ePub = ePubModule.default;
         const epubInstance = ePub(book.fileBlob.slice(0));
+
         setTimeout(() => {
           if (epubContainerRef.current) {
             epubContainerRef.current.innerHTML = "";
@@ -101,73 +137,70 @@ export default function UploadAndReadPage() {
             });
             rendition.display();
           }
-          setLoadingFile(false);
-        }, 100);
+          setIsProcessing(false);
+        }, 120);
       } catch {
-        setErrorMsg("Failed to parse this EPUB. It may be DRM-protected or corrupted.");
-        setLoadingFile(false);
+        setErrorMsg("Failed to parse this EPUB. It may be DRM-protected.");
+        setIsProcessing(false);
       }
     } else {
-      // Structured PDF Reader with Paragraph Detection
       try {
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
         const loadingTask = pdfjs.getDocument({ data: book.fileBlob.slice(0) });
         const pdfDoc = await loadingTask.promise;
+        pdfDocRef.current = pdfDoc;
         setTotalPages(pdfDoc.numPages);
 
-        const extractedPages: { pageNumber: number; paragraphs: string[] }[] = [];
+        const pagesData: ExtractedPage[] = [];
 
-        // Extract and cluster lines to avoid huge mashed single strings
         for (let i = 1; i <= pdfDoc.numPages; i++) {
           const page = await pdfDoc.getPage(i);
           const content = await page.getTextContent();
-          
-          let pageText = "";
-          let lastY: number | null = null;
 
+          let lines: { text: string; y: number }[] = [];
           for (const item of content.items) {
-            if ("str" in item) {
-              const currentY = item.transform[5];
-              // If line moved vertically, treat as newline
-              if (lastY !== null && Math.abs(currentY - lastY) > 5) {
-                pageText += "\n";
-              }
-              pageText += item.str + " ";
-              lastY = currentY;
+            if ("str" in item && item.str.trim()) {
+              lines.push({ text: item.str, y: item.transform[5] });
             }
           }
 
-          // Split by double newline or carriage return into real paragraphs
-          const paragraphs = pageText
-            .split(/\n{2,}|\r\n{2,}/)
-            .map((p) => p.replace(/\s+/g, " ").trim())
-            .filter((p) => p.length > 2);
+          // Cluster characters on matching or descending baseline lines
+          lines.sort((a, b) => b.y - a.y);
+          const rawParagraphs: string[] = [];
+          let currentParagraph = "";
+          let prevY: number | null = null;
 
-          extractedPages.push({
+          for (const line of lines) {
+            if (prevY !== null && Math.abs(line.y - prevY) > 14) {
+              if (currentParagraph.trim()) rawParagraphs.push(currentParagraph.trim());
+              currentParagraph = line.text;
+            } else {
+              currentParagraph += (currentParagraph ? " " : "") + line.text;
+            }
+            prevY = line.y;
+          }
+          if (currentParagraph.trim()) rawParagraphs.push(currentParagraph.trim());
+
+          pagesData.push({
             pageNumber: i,
-            paragraphs: paragraphs.length > 0 ? paragraphs : ["(Page contains illustrations or non-extractable text)"],
+            paragraphs: rawParagraphs.length > 0 ? rawParagraphs : ["(No extractable text on this page)"],
           });
         }
 
-        setPdfPages(extractedPages);
+        setExtractedPages(pagesData);
         setCurrentPage(1);
-        setLoadingFile(false);
+        setIsProcessing(false);
       } catch (err: unknown) {
-        setLoadingFile(false);
+        setIsProcessing(false);
         const msg = err instanceof Error ? err.message : "";
-        if (msg.toLowerCase().includes("password")) {
-          setErrorMsg("This PDF is password-protected. Please decrypt it before reading.");
-        } else {
-          setErrorMsg("Could not extract text from this PDF.");
-        }
+        setErrorMsg(msg.toLowerCase().includes("password") ? "This PDF is password-protected." : "Could not parse this PDF.");
       }
     }
   };
 
   return (
     <div className="mx-auto max-w-5xl space-y-10 px-4 py-8 sm:px-6">
-      {/* Active Reading Workspace */}
       {activeBook ? (
         <section
           data-reader-theme={settings.theme}
@@ -177,119 +210,137 @@ export default function UploadAndReadPage() {
             color: "var(--reader-text)",
           }}
         >
-          {/* Top Control Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-5" style={{ borderColor: "var(--reader-border)" }}>
+          {/* Reader Top Action Bar with Clear/Close Button */}
+          <header className="flex flex-wrap items-center justify-between gap-4 border-b pb-5" style={{ borderColor: "var(--reader-border)" }}>
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={closeViewer}
-                aria-label="Exit Viewer"
-                className="flex h-9 w-9 items-center justify-center rounded-full border hover:bg-black/5"
+                className="flex h-10 items-center gap-1.5 rounded-full border border-border/80 px-4 text-xs font-semibold hover:bg-black/5 transition-colors"
                 style={{ borderColor: "var(--reader-border)" }}
               >
                 <X className="h-4 w-4" />
+                <span>Close Document</span>
               </button>
               <div>
                 <h2 className="font-serif text-lg font-semibold line-clamp-1">{activeBook.title}</h2>
-                <span className="text-[11px] opacity-70">
-                  {activeBook.format.toUpperCase()} · Stored Locally
-                </span>
+                <span className="text-[11px] opacity-75">{activeBook.format.toUpperCase()} · Private Browser Storage</span>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
+              {activeBook.format === "pdf" && (
+                <button
+                  type="button"
+                  onClick={() => setIsReaderMode((prev) => !prev)}
+                  className="rounded-full border px-4 py-2 text-xs font-semibold transition-colors"
+                  style={{ borderColor: "var(--reader-border)" }}
+                >
+                  {isReaderMode ? "View Original PDF" : "Switch to Flow Mode"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-primary px-4 text-xs font-semibold text-primary-fg shadow-sm hover:brightness-105"
+                className="inline-flex h-10 items-center gap-1.5 rounded-full bg-primary px-4 text-xs font-semibold text-primary-fg shadow-sm hover:brightness-105"
               >
-                <Settings2 className="h-3.5 w-3.5" />
-                Reader Settings
+                <Settings2 className="h-4 w-4" />
+                <span>Typography</span>
               </button>
             </div>
-          </div>
+          </header>
 
-          {loadingFile ? (
+          {isProcessing ? (
             <div className="py-24 text-center space-y-3">
               <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              <p className="text-sm opacity-70 font-serif">Formatting text for calm reading...</p>
+              <p className="font-serif text-sm opacity-70">Structuring document for calm reading...</p>
             </div>
           ) : activeBook.format === "epub" ? (
-            <div ref={epubContainerRef} className="min-h-[600px] w-full pt-6" />
-          ) : (
-            <div className="pt-8">
-              {/* PDF Novel Reader Mode with Paragraphs */}
-              <div
-                className="mx-auto max-w-[68ch] space-y-6"
-                style={{
-                  fontFamily: FONT_MAP[settings.fontFamily] ?? FONT_MAP.serif,
-                  fontSize: `${settings.fontSize}px`,
-                  lineHeight: settings.lineHeight,
-                  textAlign: settings.textAlign,
-                }}
-              >
-                {pdfPages[currentPage - 1]?.paragraphs.map((para, idx) => (
-                  <p key={idx} className="leading-relaxed">
+            <div ref={epubContainerRef} className="min-h-[620px] w-full pt-6" />
+          ) : isReaderMode ? (
+            /* Structured Flow Mode */
+            <article
+              className="mx-auto pt-8 pb-12 transition-all"
+              style={{
+                maxWidth: settings.contentWidth === "narrow" ? "56ch" : settings.contentWidth === "wide" ? "82ch" : "68ch",
+                fontFamily: FONT_MAP[settings.fontFamily] ?? FONT_MAP.serif,
+                fontSize: `${settings.fontSize}px`,
+                lineHeight: settings.lineHeight,
+                textAlign: settings.textAlign,
+              }}
+            >
+              <div className="mb-6 flex justify-between border-b pb-2 text-[11px] opacity-60" style={{ borderColor: "var(--reader-border)" }}>
+                <span>Page {currentPage} of {totalPages}</span>
+                <span>Novel Flow View</span>
+              </div>
+              <div className="space-y-6">
+                {extractedPages[currentPage - 1]?.paragraphs.map((para, i) => (
+                  <p key={i} className="leading-relaxed">
                     {para}
                   </p>
                 ))}
               </div>
-
-              {/* PDF Bottom Pagination */}
-              <nav className="mt-12 flex items-center justify-between border-t pt-6" style={{ borderColor: "var(--reader-border)" }}>
-                <button
-                  type="button"
-                  disabled={currentPage <= 1}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className="inline-flex h-10 items-center gap-1 rounded-full border px-4 text-xs font-semibold disabled:opacity-40"
-                  style={{ borderColor: "var(--reader-border)" }}
-                >
-                  <ChevronLeft className="h-4 w-4" /> Previous Page
-                </button>
-                <span className="text-xs font-medium opacity-70">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  disabled={currentPage >= totalPages}
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className="inline-flex h-10 items-center gap-1 rounded-full bg-primary px-4 text-xs font-semibold text-primary-fg disabled:opacity-40"
-                >
-                  Next Page <ChevronRight className="h-4 w-4" />
-                </button>
-              </nav>
+            </article>
+          ) : (
+            /* Original Page Canvas View */
+            <div className="flex flex-col items-center justify-center pt-8">
+              <canvas ref={pdfCanvasRef} className="max-w-full rounded-xl shadow-lg border" style={{ borderColor: "var(--reader-border)" }} />
             </div>
+          )}
+
+          {activeBook.format === "pdf" && !isProcessing && (
+            <nav className="mt-8 flex items-center justify-between border-t pt-5" style={{ borderColor: "var(--reader-border)" }}>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="inline-flex h-10 items-center gap-1 rounded-full border px-4 text-xs font-semibold disabled:opacity-40"
+                style={{ borderColor: "var(--reader-border)" }}
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </button>
+              <span className="text-xs font-medium opacity-70">
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="inline-flex h-10 items-center gap-1 rounded-full bg-primary px-4 text-xs font-semibold text-primary-fg disabled:opacity-40"
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </button>
+            </nav>
           )}
         </section>
       ) : (
-        /* Library Mode */
+        /* Library View */
         <div className="space-y-10">
           <div className="space-y-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-mint/30 px-3.5 py-1 text-xs font-semibold text-text">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              100% Private Browser IndexedDB
+              <ShieldCheck className="h-3.5 w-3.5 text-accent-mint-fg" />
+              Zero-Server Private IndexedDB
             </span>
-            <h1 className="font-serif text-fluid-h1 font-semibold">Your Personal Reading Room</h1>
-            <p className="max-w-xl text-sm text-text-muted">
-              Add any personal EPUB or PDF document. Files stay inside your browser and never touch an external server.
+            <h1 className="font-serif text-fluid-h1 font-semibold">Bring Your Own Reading Material</h1>
+            <p className="max-w-xl text-sm text-text-muted leading-relaxed">
+              Drop an EPUB or PDF here. Your documents are stored locally in your browser and never uploaded anywhere.
             </p>
           </div>
 
-          {/* Drag & Drop Upload Zone */}
           <label
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
               handleFileSelect(e.dataTransfer.files?.[0] ?? null);
             }}
-            className="flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed border-border bg-surface p-10 text-center shadow-sm transition-all hover:border-primary hover:bg-surface-soft/40"
+            className="flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed border-border bg-surface p-12 text-center shadow-sm transition-all hover:border-primary hover:bg-surface-soft/40"
           >
             <UploadCloud className="h-10 w-10 text-primary" />
             <span className="mt-3 font-serif text-base font-semibold text-text">
-              Drop an .epub or .pdf here to begin
+              Click or drag an .epub or .pdf file here
             </span>
             <span className="mt-1 text-xs text-text-muted">
-              Maximum size: {siteConfig.maxUploadSizeMB} MB
+              Supported up to {siteConfig.maxUploadSizeMB} MB
             </span>
             <input
               type="file"
@@ -300,38 +351,27 @@ export default function UploadAndReadPage() {
           </label>
 
           {errorMsg && (
-            <div className="flex items-center gap-3 rounded-2xl bg-accent-blush/25 p-4 text-xs font-medium text-text border border-accent-blush/50">
+            <div className="flex items-center gap-3 rounded-2xl bg-accent-blush/25 p-4 text-xs font-medium text-text border border-accent-blush/60">
               <AlertCircle className="h-4 w-4 shrink-0 text-amber-700" />
               <span>{errorMsg}</span>
             </div>
           )}
 
-          {/* Saved Books Grid */}
           <div className="space-y-4">
-            <h2 className="font-serif text-lg font-semibold">Uploaded Books ({uploadedBooks.length})</h2>
+            <h2 className="font-serif text-lg font-semibold">Your Local Shelf ({uploadedBooks.length})</h2>
             {uploadedBooks.length === 0 ? (
               <p className="rounded-2xl border border-border bg-surface p-8 text-center text-xs text-text-muted">
-                Your browser library is empty. Upload an EPUB or PDF to begin.
+                No local documents saved yet. Upload one above to begin reading.
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {uploadedBooks.map((b) => (
-                  <div
-                    key={b.id}
-                    className="flex flex-col justify-between rounded-2xl border border-border bg-surface p-5 shadow-sm"
-                  >
+                  <div key={b.id} className="flex flex-col justify-between rounded-2xl border border-border bg-surface p-5 shadow-sm">
                     <div className="space-y-1">
-                      <span className="rounded bg-surface-soft px-2 py-0.5 text-[10px] font-bold uppercase">
-                        {b.format}
-                      </span>
-                      <h3 className="font-serif text-base font-semibold text-text line-clamp-1">
-                        {b.title}
-                      </h3>
-                      <p className="text-[11px] text-text-muted">
-                        {(b.sizeBytes / (1024 * 1024)).toFixed(2)} MB
-                      </p>
+                      <span className="rounded bg-surface-soft px-2 py-0.5 text-[10px] font-bold uppercase">{b.format}</span>
+                      <h3 className="font-serif text-base font-semibold text-text line-clamp-1">{b.title}</h3>
+                      <p className="text-[11px] text-text-muted">{(b.sizeBytes / (1024 * 1024)).toFixed(2)} MB</p>
                     </div>
-
                     <div className="mt-5 flex items-center gap-2">
                       <button
                         type="button"
@@ -339,12 +379,11 @@ export default function UploadAndReadPage() {
                         className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-fg"
                       >
                         <BookOpen className="h-3.5 w-3.5" />
-                        Open
+                        Read Now
                       </button>
                       <button
                         type="button"
                         onClick={() => db.uploadedBooks.delete(b.id)}
-                        aria-label={`Delete ${b.title}`}
                         className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-text-muted hover:bg-accent-blush/25 hover:text-text"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
