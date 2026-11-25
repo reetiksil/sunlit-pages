@@ -90,6 +90,12 @@ export default function AdminDashboardPage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("tab");
+      if (p === "books" || p === "editor" || p === "requests" || p === "users" || p === "overview") {
+        setTab(p);
+      }
+    }
   }, []);
 
   // Book Form State (Create / Edit)

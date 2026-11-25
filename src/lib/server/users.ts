@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import os from "os";
 import { randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from "crypto";
 import type { Role } from "@/lib/session";
 
@@ -37,7 +38,20 @@ export function toPublicUser(u: StoredUser): PublicUser {
 }
 
 export function dataDir(): string {
-  return process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(process.cwd(), ".data");
+  if (process.env.DATA_DIR) {
+    return path.resolve(process.env.DATA_DIR);
+  }
+  // Serverless environments (Vercel, AWS Lambda, Netlify functions) have a read-only root filesystem.
+  // /tmp is the writable storage directory on serverless runtimes.
+  if (
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    process.env.NETLIFY
+  ) {
+    return path.join(os.tmpdir(), "sunlit-pages-data");
+  }
+  return path.join(process.cwd(), ".data");
 }
 
 const usersFile = () => path.join(dataDir(), "users.json");

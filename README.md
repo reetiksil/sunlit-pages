@@ -202,6 +202,49 @@ Then register normally through the `/register` page. The server automatically as
 
 ---
 
+## 🌐 Production Deployment Guide
+
+Sunlit Pages is built with standard Next.js 14 App Router and can be deployed anywhere Node.js runs: Vercel, Railway, Render, Fly.io, AWS, or your own VPS.
+
+### Deploying on Vercel (Serverless)
+
+1. **Import Repository**:
+   - In your [Vercel Dashboard](https://vercel.com/dashboard), click **"Add New Project"** and select your `sunlit-pages` repository.
+   - Framework preset: **Next.js** (detected automatically).
+
+2. **Configure Environment Variables** (Project Settings → Environment Variables):
+   | Variable | Value | Notes |
+   |---|---|---|
+   | `AUTH_SECRET` | *(Random 32+ char string)* | Required. Generate with `openssl rand -base64 48`. |
+   | `ADMIN_EMAILS` | `your-email@example.com` | Elevates your account to `admin` upon registration. |
+   | `RESEND_API_KEY` | `re_123456...` | **Recommended for email delivery**. Get a free key at [resend.com](https://resend.com). |
+   | `EMAIL_FROM` | `Sunlit Pages <onboarding@resend.dev>` | Or your verified domain email (e.g. `noreply@yourdomain.com`). |
+
+   *Alternatively, if using Gmail SMTP instead of Resend:*
+   | Variable | Value | Notes |
+   |---|---|---|
+   | `SMTP_HOST` | `smtp.gmail.com` | SMTP host |
+   | `SMTP_PORT` | `587` | Standard TLS port |
+   | `SMTP_USER` | `youremail@gmail.com` | Your Gmail address |
+   | `SMTP_PASS` | `xxxx xxxx xxxx xxxx` | 16-character Google App Password (not your personal password). |
+   | `EMAIL_FROM` | `"Sunlit Pages" <youremail@gmail.com>` | Sender header |
+
+3. **Deploy**:
+   - Click **Deploy**. Vercel will build and launch your application globally on Edge + Serverless functions.
+   - Once deployed, visit `/register` with the email you configured in `ADMIN_EMAILS`. You will receive a 6-digit OTP in your inbox and be granted full Curator Studio privileges!
+
+> [!NOTE]
+> **Serverless Storage Behavior**: On serverless platforms (like Vercel and AWS Lambda), the root filesystem is read-only. Sunlit Pages automatically detects serverless environments and writes dynamic runtime files (`otps.json`, `engagement.json`, `users.json`) to `os.tmpdir()` (`/tmp`), preventing `EROFS` crashes. For indefinite multi-year user persistence across cold starts, consider deploying on a persistent container (e.g. Railway, Render, or Docker with a mounted volume).
+
+### Deploying with Docker / VPS / Railway / Render
+
+For permanent disk persistence across reboots without an external database:
+1. Set `DATA_DIR=/data` in your environment.
+2. Mount a persistent disk volume to `/data` in your deployment settings.
+3. All catalog edits, member registrations, reflections, and chapter comments will persist permanently.
+
+---
+
 ## 🔒 Security Architecture
 
 - **Signed Session Tokens:** Uses Edge-safe Web Crypto HMAC-SHA256 tokens stored in `httpOnly`, `SameSite=Lax` cookies with a 7-day expiration.
