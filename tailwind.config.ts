@@ -41,6 +41,7 @@ const config: Config = {
         "3xl": "1.375rem",
       },
       boxShadow: {
+        xs: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
         calm: "0 8px 28px -6px rgba(47, 59, 74, 0.06), 0 2px 6px -1px rgba(47, 59, 74, 0.03)",
         "calm-hover": "0 14px 34px -6px rgba(47, 59, 74, 0.11), 0 4px 10px -2px rgba(47, 59, 74, 0.05)",
       },

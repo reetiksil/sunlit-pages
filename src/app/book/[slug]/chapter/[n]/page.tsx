@@ -184,11 +184,17 @@ export default function ChapterReaderPage() {
       if (isTypingTarget(e.target) || settingsOpen || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "ArrowRight") goNext();
-      else if (e.key === "Escape" && readerMode) toggleFullscreenReader();
+      else if (e.key === "Escape") {
+        if (chaptersOpen) {
+          setChaptersOpen(false);
+        } else if (readerMode) {
+          toggleFullscreenReader();
+        }
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [goPrev, goNext, settingsOpen, readerMode, toggleFullscreenReader]);
+  }, [goPrev, goNext, settingsOpen, chaptersOpen, readerMode, toggleFullscreenReader]);
 
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const showChrome = !readerMode;
@@ -409,33 +415,40 @@ export default function ChapterReaderPage() {
       </main>
 
       {chaptersOpen && showChrome && (
-        <aside
-          aria-label="Table of contents"
-          className="fixed inset-y-0 left-0 z-50 w-80 max-w-[86vw] overflow-y-auto border-r border-border bg-surface p-6 text-text shadow-calm-hover drawer-in-left"
-          onClick={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between border-b border-border pb-4">
-            <h2 className="font-serif text-lg font-semibold">Chapters</h2>
-            <button type="button" onClick={() => setChaptersOpen(false)} className="btn btn-ghost btn-sm">Close</button>
-          </div>
-          <ul className="mt-4 space-y-1.5">
-            {sortedChapters.map((ch) => (
-              <li key={ch.id}>
-                <Link
-                  href={`/book/${params.slug}/chapter/${ch.number}`}
-                  onClick={() => setChaptersOpen(false)}
-                  aria-current={ch.number === chapterNumber ? "page" : undefined}
-                  className={`block rounded-xl px-3.5 py-2.5 text-sm ${
-                    ch.number === chapterNumber ? "bg-primary font-semibold text-primary-fg" : "hover:bg-surface-soft"
-                  }`}
-                >
-                  Ch. {ch.number}: {ch.title}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </aside>
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs transition-opacity"
+            onClick={() => setChaptersOpen(false)}
+            aria-hidden="true"
+          />
+          <aside
+            aria-label="Table of contents"
+            className="fixed inset-y-0 left-0 z-50 w-80 max-w-[86vw] overflow-y-auto border-r border-border bg-surface p-6 text-text shadow-calm-hover drawer-in-left"
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <h2 className="font-serif text-lg font-semibold">Chapters</h2>
+              <button type="button" onClick={() => setChaptersOpen(false)} className="btn btn-ghost btn-sm">Close</button>
+            </div>
+            <ul className="mt-4 space-y-1.5">
+              {sortedChapters.map((ch) => (
+                <li key={ch.id}>
+                  <Link
+                    href={`/book/${params.slug}/chapter/${ch.number}`}
+                    onClick={() => setChaptersOpen(false)}
+                    aria-current={ch.number === chapterNumber ? "page" : undefined}
+                    className={`block rounded-xl px-3.5 py-2.5 text-sm ${
+                      ch.number === chapterNumber ? "bg-primary font-semibold text-primary-fg" : "hover:bg-surface-soft"
+                    }`}
+                  >
+                    Ch. {ch.number}: {ch.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        </>
       )}
 
       <ReaderSettingsDrawer open={settingsOpen} onClose={closeSettings} />
